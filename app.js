@@ -352,10 +352,12 @@ initApp();
 async function initApp() {
   registerServiceWorker();
   requestPersistentStorage();
-  setSidebarCollapsed(localStorage.getItem(STORE_KEYS.sidebarCollapsed) === "true", {
+  const savedSidebarState = localStorage.getItem(STORE_KEYS.sidebarCollapsed);
+  const savedStudyState = localStorage.getItem(STORE_KEYS.studyDrawerCollapsed);
+  setSidebarCollapsed(savedSidebarState === null || savedSidebarState === "true", {
     persist: false,
   });
-  setStudyDrawerCollapsed(localStorage.getItem(STORE_KEYS.studyDrawerCollapsed) === "true", {
+  setStudyDrawerCollapsed(savedStudyState === null || savedStudyState === "true", {
     persist: false,
   });
   renderProjectList();
@@ -1560,6 +1562,7 @@ async function translatePickedText(source, shouldSpeak, contextText = "") {
   if (!text) return;
   const requestId = ++state.translationRequestId;
   const contextSentence = normalizeSelection(contextText || text);
+  setStudyDrawerCollapsed(false, { persist: false });
   setStudyView("lookup");
 
   state.current = {
