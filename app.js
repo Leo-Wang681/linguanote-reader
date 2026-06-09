@@ -884,6 +884,7 @@ async function renderPdfPage(pdf, pageNumber) {
   const viewport = page.getViewport({ scale: renderScale });
   const width = Math.floor(viewport.width);
   const height = Math.floor(viewport.height);
+  const outputScale = getPdfOutputScale(width, height);
 
   const pageEl = document.createElement("article");
   pageEl.className = "page pdf-page";
@@ -895,8 +896,10 @@ async function renderPdfPage(pdf, pageNumber) {
 
   const canvas = document.createElement("canvas");
   canvas.className = "pdf-canvas";
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = Math.floor(width * outputScale);
+  canvas.height = Math.floor(height * outputScale);
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
   pageEl.append(canvas);
 
   const textLayer = document.createElement("div");
@@ -907,9 +910,13 @@ async function renderPdfPage(pdf, pageNumber) {
   pageEl.append(annotationCanvas);
   appendPage(pageEl, width, height);
 
+  const canvasContext = canvas.getContext("2d", { alpha: false });
+  canvasContext.imageSmoothingEnabled = true;
+  canvasContext.imageSmoothingQuality = "high";
   await page.render({
-    canvasContext: canvas.getContext("2d"),
+    canvasContext,
     viewport,
+    transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
   }).promise;
 
   const textContent = await page.getTextContent();
@@ -926,6 +933,13 @@ async function renderPdfPage(pdf, pageNumber) {
 
   restoreAnnotation(annotationCanvas);
   return pageText;
+}
+
+function getPdfOutputScale(width, height) {
+  const deviceScale = clamp(window.devicePixelRatio || 1, 1, 2);
+  const maxCanvasPixels = 12_000_000;
+  const memoryScale = Math.sqrt(maxCanvasPixels / Math.max(1, width * height));
+  return Math.max(1, Math.min(deviceScale, memoryScale));
 }
 
 function extractPdfPageText(textContent) {
@@ -2010,18 +2024,32 @@ function createAnnotationCanvas(pageNumber, width, height) {
 
 function startStroke(event) {
   if (!isDrawingMode()) return;
+  if (event.pointerType === "touch") {
+    if (state.activeStroke) event.preventDefault();
+    return;
+  }
+  if (event.pointerType === "mouse" && event.button !== 0) return;
   event.preventDefault();
   event.currentTarget.setPointerCapture(event.pointerId);
   rememberAnnotationState(event.currentTarget);
   const point = canvasPoint(event.currentTarget, event);
   state.activeStroke = {
     canvas: event.currentTarget,
+    pointerId: event.pointerId,
+    pointerType: event.pointerType || "mouse",
     last: point,
   };
+  els.reader.classList.add("stroke-active");
 }
 
 function continueStroke(event) {
-  if (!state.activeStroke || state.activeStroke.canvas !== event.currentTarget) return;
+  if (
+    !state.activeStroke ||
+    state.activeStroke.canvas !== event.currentTarget ||
+    state.activeStroke.pointerId !== event.pointerId
+  ) {
+    return;
+  }
   event.preventDefault();
   const canvas = event.currentTarget;
   const ctx = canvas.getContext("2d");
@@ -2053,9 +2081,17 @@ function continueStroke(event) {
 }
 
 function endStroke(event) {
-  if (!state.activeStroke || state.activeStroke.canvas !== event.currentTarget) return;
+  if (
+    !state.activeStroke ||
+    state.activeStroke.canvas !== event.currentTarget ||
+    state.activeStroke.pointerId !== event.pointerId
+  ) {
+    return;
+  }
   saveAnnotation(event.currentTarget);
+  event.currentTarget.releasePointerCapture?.(event.pointerId);
   state.activeStroke = null;
+  els.reader.classList.remove("stroke-active");
 }
 
 function canvasPoint(canvas, event) {
