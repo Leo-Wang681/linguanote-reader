@@ -1,4 +1,4 @@
-const CACHE_NAME = "linguanote-v6";
+const CACHE_NAME = "linguanote-v7";
 const ASSETS = [
   "./",
   "./index.html",
@@ -11,8 +11,8 @@ const ASSETS = [
   "./icon-512.png",
   "./icon-maskable-512.png",
   "./apple-touch-icon.png",
-  "./vendor/pdf.min.mjs",
-  "./vendor/pdf.worker.min.mjs",
+  "./vendor/pdf.min.js",
+  "./vendor/pdf.worker.min.js",
   "./vendor/jszip.min.js"
 ];
 

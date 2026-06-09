@@ -1,4 +1,8 @@
-import * as pdfjsLib from "./vendor/pdf.min.mjs";
+const pdfjsLib = globalThis.pdfjsLib;
+
+if (!pdfjsLib) {
+  throw new Error("PDF.js failed to load.");
+}
 
 const STORE_KEYS = {
   notes: "linguanote.notes.v1",
@@ -322,7 +326,7 @@ const els = {
   exportNotes: document.querySelector("#exportNotes"),
 };
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.mjs";
+pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.js";
 
 initApp();
 
@@ -634,9 +638,13 @@ async function handlePdfImport(event) {
       throw new Error("PDF_SIGNATURE_MISSING");
     }
 
-    await validatePdfBuffer(buffer);
+    const pdf = await loadPdfDocument(buffer);
     const project = await createProject(file.name, "pdf", { buffer });
-    await renderPdfBuffer(buffer, project.name);
+    try {
+      await renderPdfDocument(pdf, project.name);
+    } finally {
+      await pdf.destroy();
+    }
     showToast("PDF 已载入。");
   } catch (error) {
     console.error(error);
@@ -669,14 +677,16 @@ function hasPdfSignature(buffer) {
   return false;
 }
 
-async function validatePdfBuffer(buffer) {
-  const loadingTask = pdfjsLib.getDocument({
+function loadPdfDocument(buffer) {
+  return pdfjsLib.getDocument({
     data: new Uint8Array(buffer.slice(0)),
+    cMapUrl: "./vendor/cmaps/",
+    cMapPacked: true,
+    standardFontDataUrl: "./vendor/standard_fonts/",
     isOffscreenCanvasSupported: false,
     isImageDecoderSupported: false,
-  });
-  const pdf = await loadingTask.promise;
-  await pdf.destroy();
+    useWorkerFetch: true,
+  }).promise;
 }
 
 function getPdfImportErrorMessage(error) {
@@ -699,11 +709,15 @@ function getPdfImportErrorMessage(error) {
 }
 
 async function renderPdfBuffer(buffer, title) {
-  const pdf = await pdfjsLib.getDocument({
-    data: new Uint8Array(buffer.slice(0)),
-    isOffscreenCanvasSupported: false,
-    isImageDecoderSupported: false,
-  }).promise;
+  const pdf = await loadPdfDocument(buffer);
+  try {
+    await renderPdfDocument(pdf, title);
+  } finally {
+    await pdf.destroy();
+  }
+}
+
+async function renderPdfDocument(pdf, title) {
   state.docTitle = title;
   state.recognizedPages = [];
   resetDocumentView();
@@ -763,12 +777,13 @@ async function renderPdfPage(pdf, pageNumber) {
   const pageText = extractPdfPageText(textContent);
   pageEl.dataset.fullText = pageText;
 
-  const textLayerRenderer = new pdfjsLib.TextLayer({
+  textLayer.style.setProperty("--scale-factor", String(viewport.scale));
+  const textLayerRenderer = pdfjsLib.renderTextLayer({
     textContentSource: textContent,
     container: textLayer,
     viewport,
   });
-  await textLayerRenderer.render();
+  await textLayerRenderer.promise;
 
   restoreAnnotation(annotationCanvas);
   return pageText;
