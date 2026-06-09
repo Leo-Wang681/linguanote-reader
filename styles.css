@@ -663,6 +663,15 @@ button:hover:not(:disabled) {
 .reader.eraser-mode {
   cursor: crosshair;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.reader.annotation-locked *,
+.reader.stroke-active * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -webkit-touch-callout: none !important;
 }
 
 .reader.annotation-locked,
@@ -767,6 +776,15 @@ button:hover:not(:disabled) {
 .reader.eraser-mode .annotation-canvas {
   pointer-events: auto;
   touch-action: none;
+}
+
+.reader.pen-mode .textLayer,
+.reader.highlight-mode .textLayer,
+.reader.eraser-mode .textLayer,
+.reader.pen-mode .text-doc,
+.reader.highlight-mode .text-doc,
+.reader.eraser-mode .text-doc {
+  pointer-events: none;
 }
 
 .reader.stroke-active .annotation-canvas {
