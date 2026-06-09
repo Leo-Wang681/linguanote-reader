@@ -283,6 +283,7 @@ const state = {
   annotationHistory: [],
   ignoredPointers: new Set(),
   annotationSaveTimers: new Map(),
+  annotationSaveVersions: new Map(),
   lastInkInputAt: 0,
   dockDrag: null,
   translationRequestId: 0,
@@ -440,6 +441,7 @@ function wireEvents() {
   els.reader.addEventListener("pointerup", cancelLongPress);
   els.reader.addEventListener("pointercancel", cancelLongPress);
   els.reader.addEventListener("pointerleave", cancelLongPress);
+  els.reader.addEventListener("contextmenu", preventDrawingContextMenu);
   els.reader.addEventListener("click", handleReaderClick);
   els.reader.addEventListener("scroll", handleReaderScroll, { passive: true });
   els.reader.addEventListener("touchstart", handlePinchStart, { passive: false, capture: true });
@@ -1223,6 +1225,10 @@ function setMode(mode) {
   els.reader.classList.toggle("annotation-locked", isDrawingMode());
   els.floatingDock.classList.toggle("drawing-controls-visible", isDrawingMode());
   if (isDrawingMode()) {
+    cancelLongPress();
+    state.currentRange = null;
+    state.lastSelectionText = "";
+    window.getSelection()?.removeAllRanges();
     state.lockedScroll = {
       left: els.reader.scrollLeft,
       top: els.reader.scrollTop,
@@ -1363,6 +1369,11 @@ function endHandDrag(event) {
 }
 
 function handleSelectionChange() {
+  if (isDrawingMode() || state.mode === "hand") {
+    window.getSelection()?.removeAllRanges();
+    state.currentRange = null;
+    return;
+  }
   clearTimeout(state.selectionTimer);
   state.selectionTimer = window.setTimeout(() => {
     if (isDrawingMode() || state.mode === "hand") return;
@@ -1376,6 +1387,11 @@ function handleSelectionChange() {
     state.currentRange = cloneCurrentSelectionRange();
     translatePickedText(selected, false, context);
   }, 120);
+}
+
+function preventDrawingContextMenu(event) {
+  if (!isDrawingMode()) return;
+  event.preventDefault();
 }
 
 function handleLongPressStart(event) {
@@ -2242,7 +2258,10 @@ function createAnnotationCanvas(pageNumber, width, height) {
 
 function startStroke(event) {
   if (!isDrawingMode()) return;
-  if (event.pointerType === "touch") event.preventDefault();
+  event.preventDefault();
+  event.stopPropagation();
+  cancelLongPress();
+  window.getSelection()?.removeAllRanges();
   if (isPalmPointer(event)) {
     state.ignoredPointers.add(event.pointerId);
     return;
@@ -2274,6 +2293,7 @@ function startStroke(event) {
 function continueStroke(event) {
   if (state.ignoredPointers.has(event.pointerId)) {
     event.preventDefault();
+    event.stopPropagation();
     return;
   }
   if (
@@ -2284,6 +2304,7 @@ function continueStroke(event) {
     return;
   }
   event.preventDefault();
+  event.stopPropagation();
   const canvas = event.currentTarget;
   const point = canvasPoint(canvas, event);
   drawStrokeSegment(canvas, state.activeStroke.last, point);
@@ -2321,8 +2342,10 @@ function drawStrokeSegment(canvas, from, to) {
 function endStroke(event) {
   if (state.ignoredPointers.delete(event.pointerId)) {
     event.preventDefault();
+    event.stopPropagation();
     return;
   }
+  event.stopPropagation();
   finishActiveStroke(event.pointerId, event);
 }
 
@@ -2369,26 +2392,40 @@ function saveAnnotation(canvas) {
   writeJson(STORE_KEYS.annotations, state.annotations);
 }
 
-function scheduleAnnotationSave(canvas, delay = 420) {
+function scheduleAnnotationSave(canvas, delay = 900) {
   if (!state.docKey) return;
   const docKey = state.docKey;
   const page = canvas.dataset.page || "1";
   const saveKey = `${docKey}:${page}`;
+  const version = (state.annotationSaveVersions.get(saveKey) || 0) + 1;
+  state.annotationSaveVersions.set(saveKey, version);
   clearTimeout(state.annotationSaveTimers.get(saveKey));
   const timer = window.setTimeout(() => {
     state.annotationSaveTimers.delete(saveKey);
-    const persist = () => {
-      state.annotations[docKey] ||= {};
-      state.annotations[docKey][page] = canvas.toDataURL("image/png");
-      writeJson(STORE_KEYS.annotations, state.annotations);
-    };
-    if ("requestIdleCallback" in window) {
-      window.requestIdleCallback(persist, { timeout: 700 });
-    } else {
-      window.setTimeout(persist, 0);
-    }
+    persistAnnotationAsync(canvas, docKey, page, saveKey, version);
   }, delay);
   state.annotationSaveTimers.set(saveKey, timer);
+}
+
+function persistAnnotationAsync(canvas, docKey, page, saveKey, version) {
+  const persistDataUrl = (dataUrl) => {
+    if (!dataUrl || state.annotationSaveVersions.get(saveKey) !== version) return;
+    state.annotations[docKey] ||= {};
+    state.annotations[docKey][page] = dataUrl;
+    writeJson(STORE_KEYS.annotations, state.annotations);
+  };
+
+  if (typeof canvas.toBlob !== "function") {
+    persistDataUrl(canvas.toDataURL("image/png"));
+    return;
+  }
+
+  canvas.toBlob((blob) => {
+    if (!blob || state.annotationSaveVersions.get(saveKey) !== version) return;
+    const reader = new FileReader();
+    reader.onload = () => persistDataUrl(reader.result);
+    reader.readAsDataURL(blob);
+  }, "image/png");
 }
 
 function rememberAnnotationState(canvas) {
