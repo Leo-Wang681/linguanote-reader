@@ -1,4 +1,4 @@
-const CACHE_NAME = "linguanote-v17";
+const CACHE_NAME = "linguanote-v19";
 const ASSETS = [
   "./",
   "./index.html",
@@ -50,7 +50,12 @@ self.addEventListener("fetch", (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
           return response;
         })
-        .catch(() => caches.match(event.request)),
+        .catch(async () => {
+          const cached = await caches.match(event.request, { ignoreSearch: true });
+          if (cached) return cached;
+          if (event.request.mode === "navigate") return caches.match("./index.html");
+          return Response.error();
+        }),
     );
     return;
   }
