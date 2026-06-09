@@ -1,4 +1,4 @@
-const CACHE_NAME = "linguanote-v19";
+const CACHE_NAME = "linguanote-v20";
 const ASSETS = [
   "./",
   "./index.html",
