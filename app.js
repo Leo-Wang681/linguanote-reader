@@ -281,6 +281,9 @@ const state = {
   translations: readJson(STORE_KEYS.translations, {}),
   activeStroke: null,
   annotationHistory: [],
+  ignoredPointers: new Set(),
+  annotationSaveTimers: new Map(),
+  lastInkInputAt: 0,
   dockDrag: null,
   translationRequestId: 0,
   pendingTranslations: new Map(),
@@ -1253,15 +1256,29 @@ function touchCenter(touches) {
   };
 }
 
+function isPalmTouch(touch) {
+  return Math.max(touch.radiusX || 0, touch.radiusY || 0) >= 28;
+}
+
+function isPalmPointer(event) {
+  return event.pointerType === "touch" && Math.max(event.width || 0, event.height || 0) >= 28;
+}
+
 function handlePinchStart(event) {
   if (event.touches.length !== 2) return;
+  const hasPalmContact = [...event.touches].some(isPalmTouch);
+  const recentlyWriting = state.activeStroke || performance.now() - state.lastInkInputAt < 650;
+  if (isDrawingMode() && (hasPalmContact || recentlyWriting)) {
+    event.preventDefault();
+    return;
+  }
   event.preventDefault();
   cancelLongPress();
   state.handDrag = null;
   els.reader.classList.remove("hand-dragging");
 
   if (state.activeStroke) {
-    saveAnnotation(state.activeStroke.canvas);
+    scheduleAnnotationSave(state.activeStroke.canvas);
     state.activeStroke.canvas.releasePointerCapture?.(state.activeStroke.pointerId);
     state.activeStroke = null;
     els.reader.classList.remove("stroke-active");
@@ -2218,13 +2235,20 @@ function createAnnotationCanvas(pageNumber, width, height) {
   canvas.addEventListener("pointermove", continueStroke);
   canvas.addEventListener("pointerup", endStroke);
   canvas.addEventListener("pointercancel", endStroke);
-  canvas.addEventListener("pointerleave", endStroke);
   return canvas;
 }
 
 function startStroke(event) {
   if (!isDrawingMode()) return;
-  if (state.activeStroke || event.isPrimary === false) return;
+  if (event.pointerType === "touch") event.preventDefault();
+  if (isPalmPointer(event)) {
+    state.ignoredPointers.add(event.pointerId);
+    return;
+  }
+  if (state.activeStroke) {
+    state.ignoredPointers.add(event.pointerId);
+    return;
+  }
   if (event.pointerType === "mouse" && event.button !== 0) return;
   event.preventDefault();
   event.currentTarget.setPointerCapture(event.pointerId);
@@ -2236,6 +2260,8 @@ function startStroke(event) {
     pointerType: event.pointerType || "mouse",
     last: point,
   };
+  drawStrokeSegment(event.currentTarget, point, { x: point.x + 0.01, y: point.y + 0.01 });
+  state.lastInkInputAt = performance.now();
   state.lockedScroll = {
     left: els.reader.scrollLeft,
     top: els.reader.scrollTop,
@@ -2244,6 +2270,10 @@ function startStroke(event) {
 }
 
 function continueStroke(event) {
+  if (state.ignoredPointers.has(event.pointerId)) {
+    event.preventDefault();
+    return;
+  }
   if (
     !state.activeStroke ||
     state.activeStroke.canvas !== event.currentTarget ||
@@ -2253,8 +2283,14 @@ function continueStroke(event) {
   }
   event.preventDefault();
   const canvas = event.currentTarget;
-  const ctx = canvas.getContext("2d");
   const point = canvasPoint(canvas, event);
+  drawStrokeSegment(canvas, state.activeStroke.last, point);
+  state.activeStroke.last = point;
+  state.lastInkInputAt = performance.now();
+}
+
+function drawStrokeSegment(canvas, from, to) {
+  const ctx = canvas.getContext("2d");
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.lineWidth = Number(els.dockPenSize.value);
@@ -2274,14 +2310,17 @@ function continueStroke(event) {
   }
 
   ctx.beginPath();
-  ctx.moveTo(state.activeStroke.last.x, state.activeStroke.last.y);
-  ctx.lineTo(point.x, point.y);
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
   ctx.stroke();
   ctx.globalAlpha = 1;
-  state.activeStroke.last = point;
 }
 
 function endStroke(event) {
+  if (state.ignoredPointers.delete(event.pointerId)) {
+    event.preventDefault();
+    return;
+  }
   if (
     !state.activeStroke ||
     state.activeStroke.canvas !== event.currentTarget ||
@@ -2289,9 +2328,11 @@ function endStroke(event) {
   ) {
     return;
   }
-  saveAnnotation(event.currentTarget);
+  event.preventDefault();
+  scheduleAnnotationSave(event.currentTarget);
   event.currentTarget.releasePointerCapture?.(event.pointerId);
   state.activeStroke = null;
+  state.lastInkInputAt = performance.now();
   els.reader.classList.remove("stroke-active");
 }
 
@@ -2311,14 +2352,45 @@ function saveAnnotation(canvas) {
   writeJson(STORE_KEYS.annotations, state.annotations);
 }
 
+function scheduleAnnotationSave(canvas, delay = 420) {
+  if (!state.docKey) return;
+  const docKey = state.docKey;
+  const page = canvas.dataset.page || "1";
+  const saveKey = `${docKey}:${page}`;
+  clearTimeout(state.annotationSaveTimers.get(saveKey));
+  const timer = window.setTimeout(() => {
+    state.annotationSaveTimers.delete(saveKey);
+    const persist = () => {
+      state.annotations[docKey] ||= {};
+      state.annotations[docKey][page] = canvas.toDataURL("image/png");
+      writeJson(STORE_KEYS.annotations, state.annotations);
+    };
+    if ("requestIdleCallback" in window) {
+      window.requestIdleCallback(persist, { timeout: 700 });
+    } else {
+      window.setTimeout(persist, 0);
+    }
+  }, delay);
+  state.annotationSaveTimers.set(saveKey, timer);
+}
+
 function rememberAnnotationState(canvas) {
   if (!state.docKey) return;
+  const page = canvas.dataset.page || "1";
+  const now = performance.now();
+  const previous = state.annotationHistory.at(-1);
+  if (previous?.docKey === state.docKey && previous.page === page && now - previous.createdAt < 320) return;
+  const snapshot = document.createElement("canvas");
+  snapshot.width = canvas.width;
+  snapshot.height = canvas.height;
+  snapshot.getContext("2d").drawImage(canvas, 0, 0);
   state.annotationHistory.push({
     docKey: state.docKey,
-    page: canvas.dataset.page || "1",
-    dataUrl: canvas.toDataURL("image/png"),
+    page,
+    snapshot,
+    createdAt: now,
   });
-  if (state.annotationHistory.length > 80) state.annotationHistory.shift();
+  if (state.annotationHistory.length > 24) state.annotationHistory.shift();
 }
 
 function undoAnnotation() {
@@ -2337,10 +2409,18 @@ function undoAnnotation() {
     return;
   }
 
-  restoreCanvasFromDataUrl(canvas, entry.dataUrl, () => {
-    saveAnnotation(canvas);
+  const finishUndo = () => {
+    scheduleAnnotationSave(canvas, 0);
     showToast("已撤销上一步标注。");
-  });
+  };
+  if (entry.snapshot) {
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(entry.snapshot, 0, 0);
+    finishUndo();
+  } else {
+    restoreCanvasFromDataUrl(canvas, entry.dataUrl, finishUndo);
+  }
 }
 
 function restoreCanvasFromDataUrl(canvas, dataUrl, onDone) {
