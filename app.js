@@ -285,8 +285,10 @@ const state = {
   translationRequestId: 0,
   pendingTranslations: new Map(),
   lockedScroll: { left: 0, top: 0 },
-  progressScrolling: false,
   handDrag: null,
+  pinch: null,
+  pinchFrame: 0,
+  pendingPinchZoom: 1,
 };
 
 const els = {
@@ -301,7 +303,6 @@ const els = {
   projectList: document.querySelector("#projectList"),
   projectCount: document.querySelector("#projectCount"),
   reader: document.querySelector("#reader"),
-  readerProgress: document.querySelector("#readerProgress"),
   docTitle: document.querySelector("#docTitle"),
   docMeta: document.querySelector("#docMeta"),
   connectionStatus: document.querySelector("#connectionStatus"),
@@ -436,11 +437,14 @@ function wireEvents() {
   els.reader.addEventListener("pointerleave", cancelLongPress);
   els.reader.addEventListener("click", handleReaderClick);
   els.reader.addEventListener("scroll", handleReaderScroll, { passive: true });
+  els.reader.addEventListener("touchstart", handlePinchStart, { passive: false, capture: true });
+  els.reader.addEventListener("touchmove", handlePinchMove, { passive: false, capture: true });
+  els.reader.addEventListener("touchend", handlePinchEnd, { passive: false, capture: true });
+  els.reader.addEventListener("touchcancel", handlePinchEnd, { passive: false, capture: true });
   els.reader.addEventListener("pointerdown", startHandDrag);
   window.addEventListener("pointermove", moveHandDrag);
   window.addEventListener("pointerup", endHandDrag);
   window.addEventListener("pointercancel", endHandDrag);
-  els.readerProgress.addEventListener("input", handleReaderProgressInput);
   els.speakButton.addEventListener("click", () => speak(state.current?.source));
   els.addNote.addEventListener("click", addCurrentNote);
   els.copyTranslation.addEventListener("click", copyCurrentTranslation);
@@ -485,8 +489,9 @@ function setStudyDrawerCollapsed(collapsed, options = {}) {
   }, 220);
 }
 
-function updateConnectionStatus() {
-  const online = navigator.onLine;
+function updateConnectionStatus(event) {
+  const online =
+    event?.type === "offline" ? false : event?.type === "online" ? true : navigator.onLine;
   els.connectionStatus.textContent = online ? "在线" : "离线";
   els.connectionStatus.classList.toggle("offline", !online);
 }
@@ -1176,7 +1181,7 @@ function renderTextDocument(text, title, key = `manual:${Date.now()}`) {
     const canvas = createAnnotationCanvas(1, 900, height);
     pageEl.append(canvas);
     restoreAnnotation(canvas);
-    applyZoom();
+    fitToWidth(false, { allowUpscale: false });
   });
 
   setDocumentMeta(title, `${text.length.toLocaleString()} 个字符`);
@@ -1218,7 +1223,6 @@ function setMode(mode) {
       top: els.reader.scrollTop,
     };
   }
-  updateReaderProgress();
 }
 
 function isDrawingMode() {
@@ -1226,7 +1230,7 @@ function isDrawingMode() {
 }
 
 function handleReaderScroll() {
-  if (isDrawingMode() && !state.progressScrolling) {
+  if (isDrawingMode() && !state.pinch) {
     const { left, top } = state.lockedScroll;
     if (Math.abs(els.reader.scrollLeft - left) > 1 || Math.abs(els.reader.scrollTop - top) > 1) {
       els.reader.scrollLeft = left;
@@ -1234,32 +1238,84 @@ function handleReaderScroll() {
       return;
     }
   }
-  updateReaderProgress();
 }
 
-function updateReaderProgress() {
-  const maxScroll = Math.max(0, els.reader.scrollHeight - els.reader.clientHeight);
-  const progress = maxScroll ? Math.round((els.reader.scrollTop / maxScroll) * 1000) : 0;
-  els.readerProgress.value = String(clamp(progress, 0, 1000));
-  els.readerProgress.disabled = maxScroll === 0;
-  els.readerProgress.closest(".reader-progress")?.classList.toggle("is-disabled", maxScroll === 0);
+function touchDistance(touches) {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.hypot(dx, dy);
 }
 
-function handleReaderProgressInput() {
-  const maxScroll = Math.max(0, els.reader.scrollHeight - els.reader.clientHeight);
-  const top = (Number(els.readerProgress.value) / 1000) * maxScroll;
-  state.progressScrolling = true;
-  state.lockedScroll.top = top;
-  state.lockedScroll.left = els.reader.scrollLeft;
-  els.reader.scrollTop = top;
-  requestAnimationFrame(() => {
-    state.progressScrolling = false;
-    updateReaderProgress();
+function touchCenter(touches) {
+  return {
+    x: (touches[0].clientX + touches[1].clientX) / 2,
+    y: (touches[0].clientY + touches[1].clientY) / 2,
+  };
+}
+
+function handlePinchStart(event) {
+  if (event.touches.length !== 2) return;
+  event.preventDefault();
+  cancelLongPress();
+  state.handDrag = null;
+  els.reader.classList.remove("hand-dragging");
+
+  if (state.activeStroke) {
+    saveAnnotation(state.activeStroke.canvas);
+    state.activeStroke.canvas.releasePointerCapture?.(state.activeStroke.pointerId);
+    state.activeStroke = null;
+    els.reader.classList.remove("stroke-active");
+  }
+
+  const rect = els.reader.getBoundingClientRect();
+  const center = touchCenter(event.touches);
+  state.pinch = {
+    startDistance: Math.max(1, touchDistance(event.touches)),
+    startZoom: state.zoom,
+    localX: center.x - rect.left,
+    localY: center.y - rect.top,
+    baseX: (els.reader.scrollLeft + center.x - rect.left) / state.zoom,
+    baseY: (els.reader.scrollTop + center.y - rect.top) / state.zoom,
+  };
+  els.reader.classList.add("pinch-active");
+}
+
+function handlePinchMove(event) {
+  if (!state.pinch || event.touches.length !== 2) return;
+  event.preventDefault();
+  const ratio = touchDistance(event.touches) / state.pinch.startDistance;
+  state.pendingPinchZoom = clamp(state.pinch.startZoom * ratio, MIN_ZOOM, MAX_ZOOM);
+  if (state.pinchFrame) return;
+
+  state.pinchFrame = requestAnimationFrame(() => {
+    state.pinchFrame = 0;
+    const zoom = state.pendingPinchZoom;
+    state.zoom = zoom;
+    applyZoom();
+    els.reader.scrollLeft = state.pinch.baseX * zoom - state.pinch.localX;
+    els.reader.scrollTop = state.pinch.baseY * zoom - state.pinch.localY;
   });
 }
 
+function handlePinchEnd(event) {
+  if (!state.pinch || event.touches.length >= 2) return;
+  event.preventDefault();
+  if (state.pinchFrame) {
+    cancelAnimationFrame(state.pinchFrame);
+    state.pinchFrame = 0;
+    state.zoom = state.pendingPinchZoom;
+    applyZoom();
+  }
+  state.pinch = null;
+  els.reader.classList.remove("pinch-active");
+  state.lockedScroll = {
+    left: els.reader.scrollLeft,
+    top: els.reader.scrollTop,
+  };
+}
+
 function startHandDrag(event) {
-  if (state.mode !== "hand" || event.target.closest?.(".reader-progress")) return;
+  if (state.mode !== "hand" || state.pinch) return;
   if (event.pointerType === "touch") return;
   if (event.pointerType === "mouse" && event.button !== 0) return;
   event.preventDefault();
@@ -1301,7 +1357,7 @@ function handleSelectionChange() {
     state.lastSelectionText = selectionKey;
     state.currentRange = cloneCurrentSelectionRange();
     translatePickedText(selected, false, context);
-  }, 420);
+  }, 120);
 }
 
 function handleLongPressStart(event) {
@@ -1328,14 +1384,14 @@ function handleLongPressStart(event) {
     highlightSentenceIfPossible(point.target, sentence);
     await translatePickedText(sentence, els.autoSpeak.checked, sentence);
     showToast("已选中整句。");
-  }, 560);
+  }, 420);
 }
 
 function handleLongPressMove(event) {
   if (!state.longPressPoint || event.pointerId !== state.longPressPoint.pointerId) return;
   const dx = event.clientX - state.longPressPoint.x;
   const dy = event.clientY - state.longPressPoint.y;
-  if (Math.hypot(dx, dy) > 12) cancelLongPress();
+  if (Math.hypot(dx, dy) > 16) cancelLongPress();
 }
 
 function cancelLongPress() {
@@ -1665,7 +1721,7 @@ async function translateText(text) {
 function firstSuccessfulTranslation(text, targetLang) {
   const providers = [
     { delay: 0, fetch: fetchGoogleTranslation },
-    { delay: 220, fetch: fetchMyMemoryTranslation },
+    { delay: 60, fetch: fetchMyMemoryTranslation },
   ];
 
   return new Promise((resolve, reject) => {
@@ -1692,7 +1748,7 @@ function firstSuccessfulTranslation(text, targetLang) {
 
 async function fetchGoogleTranslation(text, targetLang) {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 2400);
+  const timer = window.setTimeout(() => controller.abort(), 1800);
   try {
     const url =
       "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&dt=t" +
@@ -1711,7 +1767,7 @@ async function fetchGoogleTranslation(text, targetLang) {
 
 async function fetchMyMemoryTranslation(text, targetLang) {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 2400);
+  const timer = window.setTimeout(() => controller.abort(), 1800);
   try {
     const url =
       "https://api.mymemory.translated.net/get?q=" +
@@ -1947,13 +2003,14 @@ function setZoom(value, announce = true) {
   if (announce) showToast(`缩放 ${Math.round(state.zoom * 100)}%`);
 }
 
-function fitToWidth(announce = true) {
+function fitToWidth(announce = true, options = {}) {
   const pages = [...document.querySelectorAll(".page-wrap")];
   if (!pages.length) return;
 
   const maxWidth = Math.max(...pages.map((page) => Number(page.dataset.baseWidth) || 1));
   const available = Math.max(260, els.reader.clientWidth - 52);
-  setZoom(available / maxWidth, false);
+  const fitZoom = available / maxWidth;
+  setZoom(options.allowUpscale === false ? Math.min(1, fitZoom) : fitZoom, false);
   if (announce) showToast("已适合宽度。");
 }
 
@@ -1968,7 +2025,6 @@ function applyZoom() {
   document.querySelectorAll(".page").forEach((page) => {
     page.style.transform = `scale(${state.zoom})`;
   });
-  requestAnimationFrame(updateReaderProgress);
 }
 
 function addCurrentNote() {
