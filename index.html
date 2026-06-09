@@ -116,6 +116,10 @@
               <p>支持 PDF、Word 和 TXT。</p>
             </div>
           </section>
+          <label class="reader-progress" title="拖动以移动文档">
+            <span class="sr-only">阅读进度</span>
+            <input id="readerProgress" type="range" min="0" max="1000" value="0" aria-label="阅读进度" />
+          </label>
 
           <aside class="study-drawer">
             <div class="study-tabs" role="tablist" aria-label="学习面板">
@@ -170,6 +174,7 @@
 
     <nav class="floating-mode-dock" aria-label="悬浮阅读模式">
       <div class="dock-drag-handle" title="拖动工具栏" aria-label="拖动工具栏">⠿</div>
+      <button class="dock-mode" data-mode="hand" title="小手模式：拖动文档">手</button>
       <button class="dock-mode active" data-mode="word" title="单词模式">词</button>
       <button class="dock-mode" data-mode="sentence" title="句子模式">句</button>
       <button class="dock-mode" data-mode="pen" title="画笔模式">笔</button>
