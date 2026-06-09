@@ -10,6 +10,7 @@ const STORE_KEYS = {
   translations: "linguanote.translations.v1",
   projects: "linguanote.projects.v1",
   activeProject: "linguanote.activeProject.v1",
+  sidebarCollapsed: "linguanote.sidebarCollapsed.v1",
 };
 
 const MIN_ZOOM = 0.45;
@@ -281,6 +282,8 @@ const state = {
 };
 
 const els = {
+  appShell: document.querySelector(".app-shell"),
+  sidebarToggle: document.querySelector("#sidebarToggle"),
   fileInput: document.querySelector("#fileInput"),
   pdfInput: document.querySelector("#pdfInput"),
   docxInput: document.querySelector("#docxInput"),
@@ -333,6 +336,9 @@ initApp();
 async function initApp() {
   registerServiceWorker();
   requestPersistentStorage();
+  setSidebarCollapsed(localStorage.getItem(STORE_KEYS.sidebarCollapsed) === "true", {
+    persist: false,
+  });
   renderProjectList();
   renderNotes();
   populateVoices();
@@ -362,6 +368,9 @@ function registerServiceWorker() {
 }
 
 function wireEvents() {
+  els.sidebarToggle.addEventListener("click", () => {
+    setSidebarCollapsed(!els.appShell.classList.contains("sidebar-collapsed"));
+  });
   els.fileInput.addEventListener("change", handleUniversalImport);
   els.pdfInput.addEventListener("change", handlePdfImport);
   els.docxInput.addEventListener("change", handleDocxImport);
@@ -375,6 +384,7 @@ function wireEvents() {
     const project = await createProject("粘贴文本", "text", { text });
     activateProject(project);
     renderTextDocument(text, project.name, project.id);
+    setSidebarCollapsed(true);
   });
 
   els.modeButtons.forEach((button) => {
@@ -416,6 +426,16 @@ function wireEvents() {
 
   if ("speechSynthesis" in window) {
     window.speechSynthesis.addEventListener("voiceschanged", populateVoices);
+  }
+}
+
+function setSidebarCollapsed(collapsed, options = {}) {
+  els.appShell.classList.toggle("sidebar-collapsed", collapsed);
+  els.sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
+  els.sidebarToggle.setAttribute("aria-label", collapsed ? "展开文件菜单" : "收起文件菜单");
+  els.sidebarToggle.title = collapsed ? "展开文件菜单" : "收起文件菜单";
+  if (options.persist !== false) {
+    localStorage.setItem(STORE_KEYS.sidebarCollapsed, String(collapsed));
   }
 }
 
@@ -552,6 +572,7 @@ async function openProject(projectId, options = {}) {
     } else {
       renderTextDocument(file.text || "", project.name, project.id);
     }
+    setSidebarCollapsed(true);
     if (!options.silent) showToast("项目已打开。");
   } catch (error) {
     console.error(error);
@@ -645,6 +666,7 @@ async function handlePdfImport(event) {
     } finally {
       await pdf.destroy();
     }
+    setSidebarCollapsed(true);
     showToast("PDF 已载入。");
   } catch (error) {
     console.error(error);
@@ -882,6 +904,7 @@ async function handleDocxImport(event) {
     const project = await createProject(file.name, "docx", { buffer });
     renderTextDocument(text, project.name, project.id);
     setDocumentMeta(project.name, `${text.length.toLocaleString()} 个字符 Word`);
+    setSidebarCollapsed(true);
     showToast("Word 已载入。");
   } catch (error) {
     console.error(error);
@@ -937,6 +960,7 @@ async function handleTextFileImport(event) {
     const text = await file.text();
     const project = await createProject(file.name, "text", { text });
     renderTextDocument(text, project.name, project.id);
+    setSidebarCollapsed(true);
   } catch (error) {
     console.error(error);
     showToast("文本读取失败。");

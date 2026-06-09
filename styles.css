@@ -66,6 +66,11 @@ button:hover:not(:disabled) {
   height: 100dvh;
   min-height: 0;
   overflow: hidden;
+  transition: grid-template-columns 0.2s ease;
+}
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 0 minmax(0, 1fr);
 }
 
 .sidebar {
@@ -78,6 +83,18 @@ button:hover:not(:disabled) {
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  min-width: 0;
+  transition:
+    transform 0.2s ease,
+    opacity 0.16s ease,
+    padding 0.2s ease;
+}
+
+.app-shell.sidebar-collapsed .sidebar {
+  padding-inline: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-100%);
 }
 
 .brand {
@@ -470,6 +487,27 @@ button:hover:not(:disabled) {
   backdrop-filter: blur(8px);
 }
 
+.topbar-leading {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+
+.document-heading {
+  min-width: 0;
+}
+
+.sidebar-toggle {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  flex: 0 0 auto;
+  color: var(--accent-strong);
+  font-size: 22px;
+  line-height: 1;
+}
+
 .topbar strong,
 .topbar span {
   display: block;
@@ -853,16 +891,32 @@ button:hover:not(:disabled) {
   }
 }
 
+@media (min-width: 1181px) {
+  .app-shell.sidebar-collapsed .floating-mode-dock {
+    left: 14px;
+  }
+}
+
 @media (max-width: 760px) {
   .app-shell {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
   }
 
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 1fr;
+    grid-template-rows: 0 minmax(0, 1fr);
+  }
+
   .sidebar {
     position: static;
     padding: 16px;
     max-height: 34vh;
+  }
+
+  .app-shell.sidebar-collapsed .sidebar {
+    padding-block: 0;
+    transform: translateY(-100%);
   }
 
   .topbar,

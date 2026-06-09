@@ -114,9 +114,21 @@
 
       <main class="workspace">
         <header class="topbar">
-          <div>
-            <strong id="docTitle">未导入文档</strong>
-            <span id="docMeta">导入英文 PDF、Word 或文本开始阅读</span>
+          <div class="topbar-leading">
+            <button
+              id="sidebarToggle"
+              class="sidebar-toggle"
+              type="button"
+              title="展开或收起文件菜单"
+              aria-label="收起文件菜单"
+              aria-expanded="true"
+            >
+              ☰
+            </button>
+            <div class="document-heading">
+              <strong id="docTitle">未导入文档</strong>
+              <span id="docMeta">导入英文 PDF、Word 或文本开始阅读</span>
+            </div>
           </div>
           <div class="toolbar">
             <button id="zoomOut" title="缩小">－</button>
