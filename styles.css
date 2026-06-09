@@ -275,6 +275,13 @@ button:hover:not(:disabled) {
   font-weight: 650;
 }
 
+.file-help {
+  margin: 7px 0 12px;
+  color: #bac3c6;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .primary-button {
   display: inline-flex;
   justify-content: center;
@@ -297,6 +304,18 @@ button:hover:not(:disabled) {
 
 .universal-picker span {
   color: #edf8f6;
+}
+
+.settings-panel summary {
+  cursor: pointer;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  list-style-position: inside;
+}
+
+.settings-panel[open] summary {
+  margin-bottom: 8px;
 }
 
 #manualText {
@@ -354,6 +373,31 @@ button:hover:not(:disabled) {
     opacity 0.18s ease,
     padding 0.18s ease,
     transform 0.18s ease;
+}
+
+.floating-mode-dock.dragging {
+  transition: none;
+  user-select: none;
+}
+
+.dock-drag-handle {
+  width: 42px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  border-radius: 7px;
+  background: #f3f1eb;
+  cursor: grab;
+  touch-action: none;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.floating-mode-dock.dragging .dock-drag-handle {
+  cursor: grabbing;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
 .dock-mode,
@@ -423,6 +467,7 @@ button:hover:not(:disabled) {
 
 .floating-mode-dock.collapsed .dock-mode:not(.active),
 .floating-mode-dock.collapsed .dock-tool,
+.floating-mode-dock.collapsed .dock-drag-handle,
 .floating-mode-dock.collapsed .dock-pen-controls {
   display: none;
 }
@@ -532,6 +577,45 @@ button:hover:not(:disabled) {
 
 .toolbar button {
   min-width: 42px;
+}
+
+.connection-status {
+  align-self: center;
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border: 1px solid #aad1c7;
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background: #e8f5f1;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.connection-status.offline {
+  color: #7a5a13;
+  border-color: #e2c978;
+  background: #fff5cf;
+}
+
+.app-shell.is-busy {
+  cursor: progress;
+}
+
+.app-shell.is-busy .reader::after {
+  content: "正在处理文档…";
+  position: sticky;
+  z-index: 40;
+  top: 14px;
+  left: 50%;
+  display: block;
+  width: max-content;
+  margin: 0 auto;
+  padding: 8px 12px;
+  color: #fff;
+  border-radius: 7px;
+  background: #20282c;
+  box-shadow: var(--shadow);
+  transform: translateY(0);
 }
 
 .reader-grid {
@@ -696,6 +780,50 @@ button:hover:not(:disabled) {
   -webkit-overflow-scrolling: touch;
 }
 
+.study-tabs {
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: -4px 0 10px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(240, 238, 231, 0.94);
+  backdrop-filter: blur(8px);
+}
+
+.study-tab {
+  min-height: 38px;
+  padding: 7px 10px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.study-tab.active {
+  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.study-tab #noteCount {
+  display: inline-grid;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.study-view {
+  display: none;
+}
+
+.study-view.active {
+  display: block;
+}
+
 .lookup-card,
 .notes-panel {
   background: var(--surface);
@@ -776,7 +904,7 @@ button:hover:not(:disabled) {
 }
 
 .notes-panel {
-  margin-top: 16px;
+  margin-top: 0;
 }
 
 .notes-head {
