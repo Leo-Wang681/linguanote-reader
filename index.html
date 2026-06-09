@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
     <link rel="manifest" href="manifest.webmanifest" />
-    <meta name="theme-color" content="#1b6f68" />
+    <meta name="theme-color" content="#f4f4f5" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="LinguaNote" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -22,8 +22,8 @@
         <div class="brand">
           <div class="brand-mark">LN</div>
           <div>
-            <h1>LinguaNote</h1>
-            <p>英文文档精读与复习</p>
+            <h1>LinguaNote 六级精读</h1>
+            <p>文档库与学习记录</p>
           </div>
           <button id="sidebarClose" class="sidebar-close" type="button" title="关闭文件库" aria-label="关闭文件库">×</button>
         </div>
@@ -91,29 +91,29 @@
               aria-label="收起文件菜单"
               aria-expanded="true"
             >
-              ☰
+              ‹
             </button>
             <div class="document-heading">
-              <strong id="docTitle">未导入文档</strong>
-              <span id="docMeta">导入英文 PDF、Word 或文本开始阅读</span>
+              <strong id="docTitle">六级文档精读</strong>
+              <span id="docMeta">导入 PDF、Word 或文本开始学习</span>
             </div>
           </div>
           <div class="toolbar">
             <span id="connectionStatus" class="connection-status" role="status">在线</span>
             <div class="toolbar-group" aria-label="缩放工具">
-              <button id="zoomOut" title="缩小" aria-label="缩小">－</button>
+              <button id="zoomOut" title="缩小" aria-label="缩小">−</button>
               <button id="zoomReset" title="恢复默认缩放"><span id="zoomValue">100%</span></button>
               <button id="zoomIn" title="放大" aria-label="放大">＋</button>
-              <button id="zoomFit" title="适合宽度">适宽</button>
+              <button id="zoomFit" title="适合页宽">页宽</button>
             </div>
             <div class="toolbar-group" aria-label="文档工具">
-              <button id="jumpRecognized" class="is-hidden" title="跳到识别文本">识别</button>
+              <button id="jumpRecognized" class="is-hidden" title="跳到识别文本">文本</button>
               <button id="undoAnnotation" title="撤销上一步标注" aria-label="撤销上一步标注">↶</button>
-              <button id="clearAnnotations" title="清除当前文档标注">清除</button>
+              <button id="clearAnnotations" title="清除当前文档标注">清空</button>
             </div>
             <div class="toolbar-group" aria-label="学习工具">
-              <button id="studyDrawerToggle" class="study-drawer-toggle" title="收起学习面板" aria-label="收起学习面板" aria-expanded="true">译</button>
-              <button id="exportNotes" title="导出当前项目笔记">导出</button>
+              <button id="studyDrawerToggle" class="study-drawer-toggle" title="打开翻译与笔记" aria-label="打开翻译与笔记" aria-expanded="true">查词</button>
+              <button id="exportNotes" title="导出当前项目笔记">笔记</button>
             </div>
           </div>
         </header>
@@ -176,15 +176,16 @@
       </main>
     </div>
 
-    <nav class="floating-mode-dock" aria-label="悬浮阅读模式">
-      <div class="dock-drag-handle" title="拖动工具栏" aria-label="拖动工具栏">⠿</div>
-      <button class="dock-mode" data-mode="hand" title="小手模式：拖动文档">手</button>
-      <button class="dock-mode active" data-mode="word" title="单词模式">词</button>
-      <button class="dock-mode" data-mode="sentence" title="句子模式">句</button>
-      <button class="dock-mode" data-mode="pen" title="画笔模式">笔</button>
-      <button class="dock-mode" data-mode="highlight" title="记号笔模式">记</button>
-      <button class="dock-mode" data-mode="eraser" title="橡皮模式">擦</button>
-      <button id="dockUndoAnnotation" class="dock-tool" title="撤销上一步标注">↶</button>
+    <nav class="floating-mode-dock" role="toolbar" aria-label="阅读与标注工具">
+      <div class="dock-drag-handle" title="阅读与标注工具" aria-label="阅读与标注工具">工具</div>
+      <button class="dock-mode" data-mode="hand" title="平移文档">平移</button>
+      <button class="dock-mode active" data-mode="word" title="点击单词查词">单词</button>
+      <button class="dock-mode" data-mode="sentence" title="选择或长按翻译整句">整句</button>
+      <span class="dock-separator" aria-hidden="true"></span>
+      <button class="dock-mode" data-mode="pen" title="自由书写">画笔</button>
+      <button class="dock-mode" data-mode="highlight" title="高亮标记">高亮</button>
+      <button class="dock-mode" data-mode="eraser" title="擦除标注">橡皮</button>
+      <button id="dockUndoAnnotation" class="dock-tool" title="撤销上一步标注">撤销</button>
       <div class="dock-pen-controls" aria-label="悬浮画笔设置">
         <label class="dock-color" title="画笔颜色">
           <span>色</span>
