@@ -428,6 +428,8 @@ function wireEvents() {
   window.addEventListener("pointermove", moveDockDrag);
   window.addEventListener("pointerup", endDockDrag);
   window.addEventListener("pointercancel", endDockDrag);
+  window.addEventListener("pointerup", finishStrokeFromWindow, true);
+  window.addEventListener("pointercancel", finishStrokeFromWindow, true);
   window.addEventListener("resize", () => requestAnimationFrame(positionDock));
   window.addEventListener("orientationchange", () => window.setTimeout(positionDock, 150));
   scheduleDockCollapse();
@@ -1257,7 +1259,7 @@ function touchCenter(touches) {
 }
 
 function isPalmTouch(touch) {
-  return Math.max(touch.radiusX || 0, touch.radiusY || 0) >= 28;
+  return Math.max(touch.radiusX || 0, touch.radiusY || 0) >= 14;
 }
 
 function isPalmPointer(event) {
@@ -1269,7 +1271,6 @@ function handlePinchStart(event) {
   const hasPalmContact = [...event.touches].some(isPalmTouch);
   const recentlyWriting = state.activeStroke || performance.now() - state.lastInkInputAt < 650;
   if (isDrawingMode() && (hasPalmContact || recentlyWriting)) {
-    event.preventDefault();
     return;
   }
   event.preventDefault();
@@ -2235,6 +2236,7 @@ function createAnnotationCanvas(pageNumber, width, height) {
   canvas.addEventListener("pointermove", continueStroke);
   canvas.addEventListener("pointerup", endStroke);
   canvas.addEventListener("pointercancel", endStroke);
+  canvas.addEventListener("lostpointercapture", finishLostStroke);
   return canvas;
 }
 
@@ -2321,17 +2323,32 @@ function endStroke(event) {
     event.preventDefault();
     return;
   }
+  finishActiveStroke(event.pointerId, event);
+}
+
+function finishStrokeFromWindow(event) {
+  state.ignoredPointers.delete(event.pointerId);
+  finishActiveStroke(event.pointerId, event);
+}
+
+function finishLostStroke(event) {
+  finishActiveStroke(event.pointerId);
+}
+
+function finishActiveStroke(pointerId, event) {
   if (
     !state.activeStroke ||
-    state.activeStroke.canvas !== event.currentTarget ||
-    state.activeStroke.pointerId !== event.pointerId
+    state.activeStroke.pointerId !== pointerId
   ) {
     return;
   }
-  event.preventDefault();
-  scheduleAnnotationSave(event.currentTarget);
-  event.currentTarget.releasePointerCapture?.(event.pointerId);
+  event?.preventDefault();
+  const canvas = state.activeStroke.canvas;
+  scheduleAnnotationSave(canvas);
   state.activeStroke = null;
+  if (canvas.hasPointerCapture?.(pointerId)) {
+    canvas.releasePointerCapture(pointerId);
+  }
   state.lastInkInputAt = performance.now();
   els.reader.classList.remove("stroke-active");
 }
