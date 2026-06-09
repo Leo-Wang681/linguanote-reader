@@ -11,6 +11,7 @@ const STORE_KEYS = {
   projects: "linguanote.projects.v1",
   activeProject: "linguanote.activeProject.v1",
   sidebarCollapsed: "linguanote.sidebarCollapsed.v1",
+  dockPlacement: "linguanote.dockPlacement.v1",
 };
 
 const MIN_ZOOM = 0.45;
@@ -279,15 +280,13 @@ const state = {
   translations: readJson(STORE_KEYS.translations, {}),
   activeStroke: null,
   annotationHistory: [],
+  dockDrag: null,
 };
 
 const els = {
   appShell: document.querySelector(".app-shell"),
   sidebarToggle: document.querySelector("#sidebarToggle"),
   fileInput: document.querySelector("#fileInput"),
-  pdfInput: document.querySelector("#pdfInput"),
-  docxInput: document.querySelector("#docxInput"),
-  textInput: document.querySelector("#textInput"),
   manualText: document.querySelector("#manualText"),
   loadManualText: document.querySelector("#loadManualText"),
   projectList: document.querySelector("#projectList"),
@@ -295,10 +294,10 @@ const els = {
   reader: document.querySelector("#reader"),
   docTitle: document.querySelector("#docTitle"),
   docMeta: document.querySelector("#docMeta"),
+  connectionStatus: document.querySelector("#connectionStatus"),
   floatingDock: document.querySelector(".floating-mode-dock"),
+  dockDragHandle: document.querySelector(".dock-drag-handle"),
   modeButtons: document.querySelectorAll("[data-mode]"),
-  penColor: document.querySelector("#penColor"),
-  penSize: document.querySelector("#penSize"),
   dockPenColor: document.querySelector("#dockPenColor"),
   dockPenSize: document.querySelector("#dockPenSize"),
   targetLang: document.querySelector("#targetLang"),
@@ -327,6 +326,8 @@ const els = {
   noteTemplate: document.querySelector("#noteTemplate"),
   clearAnnotations: document.querySelector("#clearAnnotations"),
   exportNotes: document.querySelector("#exportNotes"),
+  studyTabs: document.querySelectorAll("[data-study-view]"),
+  studyPanels: document.querySelectorAll("[data-study-panel]"),
 };
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.js";
@@ -343,7 +344,9 @@ async function initApp() {
   renderNotes();
   populateVoices();
   wireEvents();
+  updateConnectionStatus();
   applyZoom();
+  requestAnimationFrame(positionDock);
   if (state.activeProjectId && state.projects.some((project) => project.id === state.activeProjectId)) {
     await openProject(state.activeProjectId, { silent: true });
   }
@@ -372,9 +375,11 @@ function wireEvents() {
     setSidebarCollapsed(!els.appShell.classList.contains("sidebar-collapsed"));
   });
   els.fileInput.addEventListener("change", handleUniversalImport);
-  els.pdfInput.addEventListener("change", handlePdfImport);
-  els.docxInput.addEventListener("change", handleDocxImport);
-  els.textInput.addEventListener("change", handleTextFileImport);
+  window.addEventListener("online", updateConnectionStatus);
+  window.addEventListener("offline", updateConnectionStatus);
+  els.studyTabs.forEach((button) => {
+    button.addEventListener("click", () => setStudyView(button.dataset.studyView));
+  });
   els.loadManualText.addEventListener("click", async () => {
     const text = els.manualText.value.trim();
     if (!text) {
@@ -397,11 +402,13 @@ function wireEvents() {
   els.floatingDock.addEventListener("focusout", scheduleDockCollapse);
   els.floatingDock.addEventListener("input", scheduleDockCollapse);
   els.floatingDock.addEventListener("click", scheduleDockCollapse);
+  els.dockDragHandle.addEventListener("pointerdown", startDockDrag);
+  window.addEventListener("pointermove", moveDockDrag);
+  window.addEventListener("pointerup", endDockDrag);
+  window.addEventListener("pointercancel", endDockDrag);
+  window.addEventListener("resize", () => requestAnimationFrame(positionDock));
+  window.addEventListener("orientationchange", () => window.setTimeout(positionDock, 150));
   scheduleDockCollapse();
-  syncPenControls(els.penColor, els.dockPenColor);
-  syncPenControls(els.dockPenColor, els.penColor);
-  syncPenControls(els.penSize, els.dockPenSize);
-  syncPenControls(els.dockPenSize, els.penSize);
 
   document.addEventListener("selectionchange", handleSelectionChange);
   els.reader.addEventListener("pointerdown", handleLongPressStart);
@@ -437,6 +444,32 @@ function setSidebarCollapsed(collapsed, options = {}) {
   if (options.persist !== false) {
     localStorage.setItem(STORE_KEYS.sidebarCollapsed, String(collapsed));
   }
+  window.setTimeout(positionDock, 220);
+}
+
+function updateConnectionStatus() {
+  const online = navigator.onLine;
+  els.connectionStatus.textContent = online ? "在线" : "离线";
+  els.connectionStatus.classList.toggle("offline", !online);
+}
+
+function setStudyView(view) {
+  els.studyTabs.forEach((button) => {
+    const active = button.dataset.studyView === view;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  els.studyPanels.forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.studyPanel === view);
+  });
+}
+
+function setImportBusy(busy, message = "") {
+  els.fileInput.disabled = busy;
+  els.loadManualText.disabled = busy;
+  els.appShell.classList.toggle("is-busy", busy);
+  els.reader.setAttribute("aria-busy", String(busy));
+  if (message) setDocumentMeta(state.docTitle || "正在处理", message);
 }
 
 async function handleUniversalImport(event) {
@@ -459,12 +492,6 @@ async function handleUniversalImport(event) {
   }
 }
 
-function syncPenControls(source, target) {
-  source.addEventListener("input", () => {
-    target.value = source.value;
-  });
-}
-
 function handleDockPointerDown(event) {
   if (!els.floatingDock.classList.contains("collapsed")) return;
   event.preventDefault();
@@ -475,6 +502,7 @@ function handleDockPointerDown(event) {
 function expandDock() {
   window.clearTimeout(state.dockTimer);
   els.floatingDock.classList.remove("collapsed");
+  requestAnimationFrame(positionDock);
 }
 
 function scheduleDockCollapse() {
@@ -485,7 +513,91 @@ function scheduleDockCollapse() {
       return;
     }
     els.floatingDock.classList.add("collapsed");
+    requestAnimationFrame(positionDock);
   }, 2600);
+}
+
+function readDockPlacement() {
+  const saved = readJson(STORE_KEYS.dockPlacement, null);
+  const savedY = Number(saved?.y);
+  return {
+    side: saved?.side === "right" ? "right" : "left",
+    y: clamp(Number.isFinite(savedY) ? savedY : 0.5, 0, 1),
+  };
+}
+
+function positionDock() {
+  if (state.dockDrag || !els.reader.isConnected) return;
+  const readerRect = els.reader.getBoundingClientRect();
+  const dockRect = els.floatingDock.getBoundingClientRect();
+  if (!readerRect.width || !readerRect.height || !dockRect.width || !dockRect.height) return;
+
+  const placement = readDockPlacement();
+  const inset = 8;
+  const availableY = Math.max(0, readerRect.height - dockRect.height - inset * 2);
+  const left =
+    placement.side === "right"
+      ? readerRect.right - dockRect.width - inset
+      : readerRect.left + inset;
+  const top = readerRect.top + inset + availableY * placement.y;
+  setDockCoordinates(left, top, readerRect, dockRect);
+}
+
+function setDockCoordinates(left, top, readerRect, dockRect) {
+  const inset = 8;
+  const minLeft = readerRect.left + inset;
+  const maxLeft = Math.max(minLeft, readerRect.right - dockRect.width - inset);
+  const minTop = readerRect.top + inset;
+  const maxTop = Math.max(minTop, readerRect.bottom - dockRect.height - inset);
+  els.floatingDock.style.left = `${clamp(left, minLeft, maxLeft)}px`;
+  els.floatingDock.style.top = `${clamp(top, minTop, maxTop)}px`;
+  els.floatingDock.style.right = "auto";
+  els.floatingDock.style.bottom = "auto";
+  els.floatingDock.style.transform = "none";
+}
+
+function startDockDrag(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  expandDock();
+  window.clearTimeout(state.dockTimer);
+
+  const dockRect = els.floatingDock.getBoundingClientRect();
+  state.dockDrag = {
+    pointerId: event.pointerId,
+    offsetX: event.clientX - dockRect.left,
+    offsetY: event.clientY - dockRect.top,
+  };
+  els.dockDragHandle.setPointerCapture?.(event.pointerId);
+  els.floatingDock.classList.add("dragging");
+}
+
+function moveDockDrag(event) {
+  if (!state.dockDrag || event.pointerId !== state.dockDrag.pointerId) return;
+  event.preventDefault();
+  const readerRect = els.reader.getBoundingClientRect();
+  const dockRect = els.floatingDock.getBoundingClientRect();
+  setDockCoordinates(
+    event.clientX - state.dockDrag.offsetX,
+    event.clientY - state.dockDrag.offsetY,
+    readerRect,
+    dockRect,
+  );
+}
+
+function endDockDrag(event) {
+  if (!state.dockDrag || event.pointerId !== state.dockDrag.pointerId) return;
+  const readerRect = els.reader.getBoundingClientRect();
+  const dockRect = els.floatingDock.getBoundingClientRect();
+  const side = dockRect.left + dockRect.width / 2 < readerRect.left + readerRect.width / 2 ? "left" : "right";
+  const availableY = Math.max(1, readerRect.height - dockRect.height - 16);
+  const y = clamp((dockRect.top - readerRect.top - 8) / availableY, 0, 1);
+
+  state.dockDrag = null;
+  els.floatingDock.classList.remove("dragging");
+  writeJson(STORE_KEYS.dockPlacement, { side, y });
+  positionDock();
+  scheduleDockCollapse();
 }
 
 async function openDb() {
@@ -558,6 +670,7 @@ async function openProject(projectId, options = {}) {
   const project = state.projects.find((item) => item.id === projectId);
   if (!project) return;
 
+  setImportBusy(true, "正在打开项目...");
   try {
     const file = await dbRequest("readonly", (store) => store.get(project.id));
     if (!file) throw new Error("Project file missing");
@@ -577,6 +690,8 @@ async function openProject(projectId, options = {}) {
   } catch (error) {
     console.error(error);
     showToast("项目打开失败，请重新导入文件。");
+  } finally {
+    setImportBusy(false);
   }
 }
 
@@ -652,6 +767,7 @@ async function handlePdfImport(event) {
   const file = event.target.files?.[0];
   if (!file) return;
 
+  setImportBusy(true);
   setDocumentMeta(file.name, "正在解析 PDF...");
   try {
     const buffer = await readFileAsArrayBuffer(file);
@@ -674,6 +790,7 @@ async function handlePdfImport(event) {
     setDocumentMeta("PDF 载入失败", message);
     showToast(message);
   } finally {
+    setImportBusy(false);
     event.target.value = "";
   }
 }
@@ -896,6 +1013,7 @@ async function handleDocxImport(event) {
   const file = event.target.files?.[0];
   if (!file) return;
 
+  setImportBusy(true);
   setDocumentMeta(file.name, "正在解析 Word...");
   try {
     const buffer = await file.arrayBuffer();
@@ -911,6 +1029,7 @@ async function handleDocxImport(event) {
     setDocumentMeta("载入失败", "仅支持 .docx 格式，请确认文件未加密。");
     showToast("Word 解析失败。");
   } finally {
+    setImportBusy(false);
     event.target.value = "";
   }
 }
@@ -956,6 +1075,7 @@ async function handleTextFileImport(event) {
   const file = event.target.files?.[0];
   if (!file) return;
 
+  setImportBusy(true);
   try {
     const text = await file.text();
     const project = await createProject(file.name, "text", { text });
@@ -965,6 +1085,7 @@ async function handleTextFileImport(event) {
     console.error(error);
     showToast("文本读取失败。");
   } finally {
+    setImportBusy(false);
     event.target.value = "";
   }
 }
@@ -1222,6 +1343,7 @@ async function translatePickedText(source, shouldSpeak, contextText = "") {
   const text = normalizeSelection(source);
   if (!text) return;
   const contextSentence = normalizeSelection(contextText || text);
+  setStudyView("lookup");
 
   state.current = {
     source: text,
@@ -1399,21 +1521,52 @@ async function translateText(text) {
     return cacheTranslation(key, fallbackDictionary.get(lower));
   }
 
+  for (const provider of [fetchGoogleTranslation, fetchMyMemoryTranslation]) {
+    try {
+      const translated = await provider(text, els.targetLang.value);
+      if (translated) return cacheTranslation(key, translated);
+    } catch (error) {
+      console.warn("Translation provider failed", error);
+    }
+  }
+
+  return "暂时无法连接在线翻译服务。你仍然可以将原文加入笔记，并在导出的笔记中补充译文。";
+}
+
+async function fetchGoogleTranslation(text, targetLang) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 5000);
+  try {
+    const url =
+      "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&dt=t" +
+      `&tl=${encodeURIComponent(targetLang)}&q=${encodeURIComponent(text)}`;
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`Google HTTP ${response.status}`);
+    const data = await response.json();
+    return (data?.[0] || [])
+      .map((segment) => segment?.[0] || "")
+      .join("")
+      .trim();
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function fetchMyMemoryTranslation(text, targetLang) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 5000);
   try {
     const url =
       "https://api.mymemory.translated.net/get?q=" +
       encodeURIComponent(text) +
-      `&langpair=en|${encodeURIComponent(els.targetLang.value)}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      `&langpair=en|${encodeURIComponent(targetLang)}`;
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`MyMemory HTTP ${response.status}`);
     const data = await response.json();
-    const translated = data?.responseData?.translatedText?.trim();
-    if (translated) return cacheTranslation(key, translated);
-  } catch (error) {
-    console.warn("Translation failed", error);
+    return data?.responseData?.translatedText?.trim() || "";
+  } finally {
+    window.clearTimeout(timer);
   }
-
-  return "暂时无法连接在线翻译服务。你仍然可以将原文加入笔记，并在导出的笔记中补充译文。";
 }
 
 function cacheTranslation(key, value) {
@@ -1456,7 +1609,8 @@ function buildOtherMeanings(currentMeaning, cet6, localCommon, remoteMeanings = 
   const candidates = [];
   if (cet6?.contextMeaning) candidates.push(...splitMeaningItems(cet6.contextMeaning));
   if (localCommon) candidates.push(...splitMeaningItems(localCommon));
-  candidates.push(...remoteMeanings);
+  const targetIsChinese = els.targetLang.value.startsWith("zh");
+  if (!targetIsChinese) candidates.push(...remoteMeanings);
 
   const currentTokens = splitMeaningItems(currentMeaning).map((item) => item.toLowerCase());
   const unique = [];
@@ -1685,6 +1839,7 @@ function addCurrentNote() {
   writeJson(STORE_KEYS.notes, state.notes);
   markCurrentSourceInDocument();
   renderNotes();
+  setStudyView("notes");
   showToast("已加入笔记本。");
 }
 
@@ -1787,8 +1942,22 @@ async function copyCurrentTranslation() {
     `当前位置含义：${state.current.contextMeaning || state.current.translation}`,
     state.current.commonMeaning ? `其他常用含义：${state.current.commonMeaning}` : "",
   ].filter(Boolean);
-  await navigator.clipboard.writeText(lines.join("\n"));
-  showToast("译文已复制。");
+  const text = lines.join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("译文已复制。");
+  } catch (error) {
+    console.warn("Clipboard write failed", error);
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.append(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    showToast(copied ? "译文已复制。" : "复制失败，请长按译文手动复制。");
+  }
 }
 
 function exportNotes() {
@@ -1817,8 +1986,10 @@ function exportNotes() {
   const link = document.createElement("a");
   link.href = url;
   link.download = "linguanote-notes.csv";
+  document.body.append(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function createAnnotationCanvas(pageNumber, width, height) {
@@ -1857,20 +2028,20 @@ function continueStroke(event) {
   const point = canvasPoint(canvas, event);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.lineWidth = Number(els.penSize.value);
+  ctx.lineWidth = Number(els.dockPenSize.value);
   ctx.globalAlpha = 1;
 
   if (state.mode === "eraser") {
     ctx.globalCompositeOperation = "destination-out";
-    ctx.lineWidth = Number(els.penSize.value) * 3;
+    ctx.lineWidth = Number(els.dockPenSize.value) * 3;
   } else if (state.mode === "highlight") {
     ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 0.32;
-    ctx.lineWidth = Math.max(14, Number(els.penSize.value) * 3.2);
-    ctx.strokeStyle = els.penColor.value || "#ffd84d";
+    ctx.lineWidth = Math.max(14, Number(els.dockPenSize.value) * 3.2);
+    ctx.strokeStyle = els.dockPenColor.value || "#ffd84d";
   } else {
     ctx.globalCompositeOperation = "source-over";
-    ctx.strokeStyle = els.penColor.value;
+    ctx.strokeStyle = els.dockPenColor.value;
   }
 
   ctx.beginPath();
@@ -1982,6 +2153,7 @@ function clearReader() {
   els.commonMeaningText.textContent = "-";
   els.addNote.disabled = true;
   els.copyTranslation.disabled = true;
+  setStudyView("lookup");
 }
 
 function setDocumentMeta(title, meta) {
