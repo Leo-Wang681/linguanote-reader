@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>LinguaNote Reader</title>
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#1b6f68" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="LinguaNote" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="compat.js"></script>
+    <script src="vendor/jszip.min.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">LN</div>
+          <div>
+            <h1>LinguaNote</h1>
+            <p>英文文档精读与复习</p>
+          </div>
+        </div>
+
+        <section class="panel">
+          <h2>导入</h2>
+          <label class="file-picker universal-picker">
+            <input
+              id="fileInput"
+              type="file"
+              accept=".pdf,.docx,.txt,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            />
+            <span>从 iPad 文件中导入</span>
+          </label>
+          <label class="file-picker">
+            <input id="pdfInput" type="file" accept=".pdf,application/pdf" />
+            <span>导入 PDF</span>
+          </label>
+          <label class="file-picker secondary">
+            <input id="docxInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            <span>导入 Word</span>
+          </label>
+          <label class="file-picker secondary">
+            <input id="textInput" type="file" accept=".txt,text/plain" />
+            <span>导入文本</span>
+          </label>
+          <textarea id="manualText" placeholder="也可以直接粘贴英文文本..."></textarea>
+          <button id="loadManualText" class="primary-button">载入文本</button>
+        </section>
+
+        <section class="panel project-panel">
+          <div class="panel-head">
+            <h2>项目</h2>
+            <span id="projectCount">0</span>
+          </div>
+          <div id="projectList" class="project-list"></div>
+        </section>
+
+        <section class="panel mode-panel">
+          <h2>阅读模式</h2>
+          <div class="segmented" aria-label="选择阅读模式">
+            <button class="segment active" data-mode="word">单词</button>
+            <button class="segment" data-mode="sentence">句子</button>
+            <button class="segment" data-mode="pen">画笔</button>
+            <button class="segment" data-mode="highlight">记号笔</button>
+            <button class="segment" data-mode="eraser">橡皮</button>
+          </div>
+          <label class="control-row">
+            <span>画笔颜色</span>
+            <input id="penColor" type="color" value="#f05a28" />
+          </label>
+          <label class="control-row">
+            <span>画笔粗细</span>
+            <input id="penSize" type="range" min="2" max="18" value="5" />
+          </label>
+        </section>
+
+        <section class="panel">
+          <h2>发音</h2>
+          <label class="control-row stacked">
+            <span>美式语音</span>
+            <select id="voiceSelect"></select>
+          </label>
+          <label class="control-row">
+            <span>语速</span>
+            <input id="speechRate" type="range" min="0.72" max="1.08" step="0.02" value="0.9" />
+          </label>
+          <label class="toggle-row">
+            <input id="autoSpeak" type="checkbox" checked />
+            <span>点击后自动发音</span>
+          </label>
+          <p class="panel-note">当前使用 iPad/浏览器系统美式 TTS。真人或 AI 音色需要接入云端语音接口。</p>
+        </section>
+
+        <section class="panel">
+          <h2>翻译设置</h2>
+          <label class="control-row stacked">
+            <span>目标语言</span>
+            <select id="targetLang">
+              <option value="zh-CN">简体中文</option>
+              <option value="zh-TW">繁体中文</option>
+              <option value="ja">日语</option>
+              <option value="ko">韩语</option>
+            </select>
+          </label>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <strong id="docTitle">未导入文档</strong>
+            <span id="docMeta">导入英文 PDF、Word 或文本开始阅读</span>
+          </div>
+          <div class="toolbar">
+            <button id="zoomOut" title="缩小">－</button>
+            <button id="zoomReset" title="恢复默认缩放"><span id="zoomValue">100%</span></button>
+            <button id="zoomIn" title="放大">＋</button>
+            <button id="zoomFit" title="适合宽度">适宽</button>
+            <button id="jumpRecognized" class="is-hidden" title="跳到识别文本">识别文本</button>
+            <button id="undoAnnotation" title="撤销上一步标注">撤销</button>
+            <button id="clearAnnotations" title="清除当前文档标注">清除标注</button>
+            <button id="exportNotes" title="导出笔记">导出笔记</button>
+          </div>
+        </header>
+
+        <div class="reader-grid">
+          <section id="reader" class="reader" aria-label="阅读区">
+            <div class="empty-state">
+              <h2>导入英文材料后开始精读</h2>
+              <p>点击单词或选中词组、句子即可翻译；切换到画笔模式可以直接勾画。</p>
+            </div>
+          </section>
+
+          <aside class="study-drawer">
+            <section class="lookup-card">
+              <div class="lookup-head">
+                <div>
+                  <span class="eyebrow">当前选中</span>
+                  <h2 id="lookupText">-</h2>
+                </div>
+                <button id="speakButton" class="icon-button" title="发音">▶</button>
+              </div>
+              <p id="translationText" class="translation">点击或选中文档中的英文内容后显示翻译。</p>
+              <div class="lookup-details">
+                <div class="detail-row">
+                  <span>音标</span>
+                  <strong id="phoneticText">-</strong>
+                </div>
+                <div class="detail-row">
+                  <span>上下文句子</span>
+                  <strong id="contextSentenceText">-</strong>
+                </div>
+                <div class="detail-row">
+                  <span>当前位置含义</span>
+                  <strong id="contextMeaningText">-</strong>
+                </div>
+                <div class="detail-row">
+                  <span>其他常用含义</span>
+                  <strong id="commonMeaningText">-</strong>
+                </div>
+              </div>
+              <div class="lookup-actions">
+                <button id="addNote" class="primary-button" disabled>加入笔记本</button>
+                <button id="copyTranslation" disabled>复制译文</button>
+              </div>
+            </section>
+
+            <section class="notes-panel">
+              <div class="notes-head">
+                <h2>复习笔记</h2>
+                <span id="noteCount">0</span>
+              </div>
+              <div id="notesList" class="notes-list"></div>
+            </section>
+          </aside>
+        </div>
+      </main>
+    </div>
+
+    <nav class="floating-mode-dock" aria-label="悬浮阅读模式">
+      <button class="dock-mode active" data-mode="word" title="单词模式">词</button>
+      <button class="dock-mode" data-mode="sentence" title="句子模式">句</button>
+      <button class="dock-mode" data-mode="pen" title="画笔模式">笔</button>
+      <button class="dock-mode" data-mode="highlight" title="记号笔模式">记</button>
+      <button class="dock-mode" data-mode="eraser" title="橡皮模式">擦</button>
+      <button id="dockUndoAnnotation" class="dock-tool" title="撤销上一步标注">↶</button>
+      <div class="dock-pen-controls" aria-label="悬浮画笔设置">
+        <label class="dock-color" title="画笔颜色">
+          <span>色</span>
+          <input id="dockPenColor" type="color" value="#f05a28" />
+        </label>
+        <label class="dock-size" title="画笔粗细">
+          <span>粗</span>
+          <input id="dockPenSize" type="range" min="2" max="18" value="5" />
+        </label>
+      </div>
+    </nav>
+
+    <template id="noteTemplate">
+      <article class="note-item">
+        <div>
+          <strong class="note-source"></strong>
+          <span class="note-phonetic"></span>
+          <p class="note-translation"></p>
+          <p class="note-context"></p>
+          <p class="note-common"></p>
+        </div>
+        <div class="note-actions">
+          <button class="speak-note" title="发音">▶</button>
+          <button class="delete-note" title="删除">×</button>
+        </div>
+      </article>
+    </template>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
