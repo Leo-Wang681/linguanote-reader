@@ -11,6 +11,7 @@ const STORE_KEYS = {
   projects: "linguanote.projects.v1",
   activeProject: "linguanote.activeProject.v1",
   sidebarCollapsed: "linguanote.sidebarCollapsed.v1",
+  studyDrawerCollapsed: "linguanote.studyDrawerCollapsed.v1",
   dockPlacement: "linguanote.dockPlacement.v1",
 };
 
@@ -291,6 +292,9 @@ const state = {
 const els = {
   appShell: document.querySelector(".app-shell"),
   sidebarToggle: document.querySelector("#sidebarToggle"),
+  sidebarClose: document.querySelector("#sidebarClose"),
+  sidebarBackdrop: document.querySelector(".sidebar-backdrop"),
+  studyDrawerToggle: document.querySelector("#studyDrawerToggle"),
   fileInput: document.querySelector("#fileInput"),
   manualText: document.querySelector("#manualText"),
   loadManualText: document.querySelector("#loadManualText"),
@@ -346,6 +350,9 @@ async function initApp() {
   setSidebarCollapsed(localStorage.getItem(STORE_KEYS.sidebarCollapsed) === "true", {
     persist: false,
   });
+  setStudyDrawerCollapsed(localStorage.getItem(STORE_KEYS.studyDrawerCollapsed) === "true", {
+    persist: false,
+  });
   renderProjectList();
   renderNotes();
   populateVoices();
@@ -379,6 +386,11 @@ function registerServiceWorker() {
 function wireEvents() {
   els.sidebarToggle.addEventListener("click", () => {
     setSidebarCollapsed(!els.appShell.classList.contains("sidebar-collapsed"));
+  });
+  els.sidebarClose.addEventListener("click", () => setSidebarCollapsed(true));
+  els.sidebarBackdrop.addEventListener("click", () => setSidebarCollapsed(true));
+  els.studyDrawerToggle.addEventListener("click", () => {
+    setStudyDrawerCollapsed(!els.appShell.classList.contains("study-drawer-collapsed"));
   });
   els.fileInput.addEventListener("change", handleUniversalImport);
   window.addEventListener("online", updateConnectionStatus);
@@ -457,6 +469,20 @@ function setSidebarCollapsed(collapsed, options = {}) {
     localStorage.setItem(STORE_KEYS.sidebarCollapsed, String(collapsed));
   }
   window.setTimeout(positionDock, 220);
+}
+
+function setStudyDrawerCollapsed(collapsed, options = {}) {
+  els.appShell.classList.toggle("study-drawer-collapsed", collapsed);
+  els.studyDrawerToggle.setAttribute("aria-expanded", String(!collapsed));
+  els.studyDrawerToggle.setAttribute("aria-label", collapsed ? "展开学习面板" : "收起学习面板");
+  els.studyDrawerToggle.title = collapsed ? "展开学习面板" : "收起学习面板";
+  if (options.persist !== false) {
+    localStorage.setItem(STORE_KEYS.studyDrawerCollapsed, String(collapsed));
+  }
+  window.setTimeout(() => {
+    applyZoom();
+    positionDock();
+  }, 220);
 }
 
 function updateConnectionStatus() {
@@ -1185,6 +1211,7 @@ function setMode(mode) {
   els.reader.classList.toggle("eraser-mode", mode === "eraser");
   els.reader.classList.toggle("hand-mode", mode === "hand");
   els.reader.classList.toggle("annotation-locked", isDrawingMode());
+  els.floatingDock.classList.toggle("drawing-controls-visible", isDrawingMode());
   if (isDrawingMode()) {
     state.lockedScroll = {
       left: els.reader.scrollLeft,
