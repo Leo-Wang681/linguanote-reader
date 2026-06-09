@@ -281,6 +281,11 @@ const state = {
   activeStroke: null,
   annotationHistory: [],
   dockDrag: null,
+  translationRequestId: 0,
+  pendingTranslations: new Map(),
+  lockedScroll: { left: 0, top: 0 },
+  progressScrolling: false,
+  handDrag: null,
 };
 
 const els = {
@@ -292,6 +297,7 @@ const els = {
   projectList: document.querySelector("#projectList"),
   projectCount: document.querySelector("#projectCount"),
   reader: document.querySelector("#reader"),
+  readerProgress: document.querySelector("#readerProgress"),
   docTitle: document.querySelector("#docTitle"),
   docMeta: document.querySelector("#docMeta"),
   connectionStatus: document.querySelector("#connectionStatus"),
@@ -417,6 +423,12 @@ function wireEvents() {
   els.reader.addEventListener("pointercancel", cancelLongPress);
   els.reader.addEventListener("pointerleave", cancelLongPress);
   els.reader.addEventListener("click", handleReaderClick);
+  els.reader.addEventListener("scroll", handleReaderScroll, { passive: true });
+  els.reader.addEventListener("pointerdown", startHandDrag);
+  window.addEventListener("pointermove", moveHandDrag);
+  window.addEventListener("pointerup", endHandDrag);
+  window.addEventListener("pointercancel", endHandDrag);
+  els.readerProgress.addEventListener("input", handleReaderProgressInput);
   els.speakButton.addEventListener("click", () => speak(state.current?.source));
   els.addNote.addEventListener("click", addCurrentNote);
   els.copyTranslation.addEventListener("click", copyCurrentTranslation);
@@ -494,6 +506,7 @@ async function handleUniversalImport(event) {
 
 function handleDockPointerDown(event) {
   if (!els.floatingDock.classList.contains("collapsed")) return;
+  if (event.target.closest?.('[data-mode="hand"]')) return;
   event.preventDefault();
   event.stopPropagation();
   expandDock();
@@ -1170,16 +1183,88 @@ function setMode(mode) {
   els.reader.classList.toggle("pen-mode", mode === "pen");
   els.reader.classList.toggle("highlight-mode", mode === "highlight");
   els.reader.classList.toggle("eraser-mode", mode === "eraser");
+  els.reader.classList.toggle("hand-mode", mode === "hand");
+  els.reader.classList.toggle("annotation-locked", isDrawingMode());
+  if (isDrawingMode()) {
+    state.lockedScroll = {
+      left: els.reader.scrollLeft,
+      top: els.reader.scrollTop,
+    };
+  }
+  updateReaderProgress();
 }
 
 function isDrawingMode() {
   return state.mode === "pen" || state.mode === "highlight" || state.mode === "eraser";
 }
 
+function handleReaderScroll() {
+  if (isDrawingMode() && !state.progressScrolling) {
+    const { left, top } = state.lockedScroll;
+    if (Math.abs(els.reader.scrollLeft - left) > 1 || Math.abs(els.reader.scrollTop - top) > 1) {
+      els.reader.scrollLeft = left;
+      els.reader.scrollTop = top;
+      return;
+    }
+  }
+  updateReaderProgress();
+}
+
+function updateReaderProgress() {
+  const maxScroll = Math.max(0, els.reader.scrollHeight - els.reader.clientHeight);
+  const progress = maxScroll ? Math.round((els.reader.scrollTop / maxScroll) * 1000) : 0;
+  els.readerProgress.value = String(clamp(progress, 0, 1000));
+  els.readerProgress.disabled = maxScroll === 0;
+  els.readerProgress.closest(".reader-progress")?.classList.toggle("is-disabled", maxScroll === 0);
+}
+
+function handleReaderProgressInput() {
+  const maxScroll = Math.max(0, els.reader.scrollHeight - els.reader.clientHeight);
+  const top = (Number(els.readerProgress.value) / 1000) * maxScroll;
+  state.progressScrolling = true;
+  state.lockedScroll.top = top;
+  state.lockedScroll.left = els.reader.scrollLeft;
+  els.reader.scrollTop = top;
+  requestAnimationFrame(() => {
+    state.progressScrolling = false;
+    updateReaderProgress();
+  });
+}
+
+function startHandDrag(event) {
+  if (state.mode !== "hand" || event.target.closest?.(".reader-progress")) return;
+  if (event.pointerType === "touch") return;
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  event.preventDefault();
+  els.reader.setPointerCapture?.(event.pointerId);
+  state.handDrag = {
+    pointerId: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    left: els.reader.scrollLeft,
+    top: els.reader.scrollTop,
+  };
+  els.reader.classList.add("hand-dragging");
+}
+
+function moveHandDrag(event) {
+  if (!state.handDrag || state.handDrag.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  els.reader.scrollLeft = state.handDrag.left - (event.clientX - state.handDrag.x);
+  els.reader.scrollTop = state.handDrag.top - (event.clientY - state.handDrag.y);
+}
+
+function endHandDrag(event) {
+  if (!state.handDrag || state.handDrag.pointerId !== event.pointerId) return;
+  els.reader.releasePointerCapture?.(event.pointerId);
+  state.handDrag = null;
+  els.reader.classList.remove("hand-dragging");
+}
+
 function handleSelectionChange() {
   clearTimeout(state.selectionTimer);
   state.selectionTimer = window.setTimeout(() => {
-    if (isDrawingMode()) return;
+    if (isDrawingMode() || state.mode === "hand") return;
 
     const selected = getReaderSelectionText();
     const context = getSelectionContextText(selected);
@@ -1193,7 +1278,7 @@ function handleSelectionChange() {
 }
 
 function handleLongPressStart(event) {
-  if (isDrawingMode()) return;
+  if (isDrawingMode() || state.mode === "hand") return;
   if (event.pointerType === "mouse" && event.button !== 0) return;
   if (event.target.closest?.("button, input, textarea, select, .floating-mode-dock")) return;
 
@@ -1331,7 +1416,7 @@ function getSelectionContextText(selectedText) {
 }
 
 async function handleReaderClick(event) {
-  if (isDrawingMode()) return;
+  if (isDrawingMode() || state.mode === "hand") return;
   if (state.suppressNextClick) {
     state.suppressNextClick = false;
     return;
@@ -1356,6 +1441,7 @@ async function handleReaderClick(event) {
 async function translatePickedText(source, shouldSpeak, contextText = "") {
   const text = normalizeSelection(source);
   if (!text) return;
+  const requestId = ++state.translationRequestId;
   const contextSentence = normalizeSelection(contextText || text);
   setStudyView("lookup");
 
@@ -1381,17 +1467,22 @@ async function translatePickedText(source, shouldSpeak, contextText = "") {
   if (shouldSpeak && els.autoSpeak.checked) speak(text);
 
   const translation = await translateText(text);
-  if (!state.current || state.current.source !== text) return;
+  if (requestId !== state.translationRequestId || !state.current || state.current.source !== text) return;
 
   state.current.translation = translation;
+  state.current.contextMeaning = translation;
+  els.translationText.textContent = translation;
+  els.contextMeaningText.textContent = translation;
+  els.addNote.disabled = false;
+  els.copyTranslation.disabled = false;
+
   const lexical = await lookupLexicalInfo(text, translation, contextSentence);
-  if (!state.current || state.current.source !== text) return;
+  if (requestId !== state.translationRequestId || !state.current || state.current.source !== text) return;
 
   state.current.phonetic = lexical.phonetic;
   state.current.contextSentence = lexical.contextSentence || contextSentence;
   state.current.contextMeaning = lexical.contextMeaning;
   state.current.commonMeaning = lexical.commonMeaning;
-  els.translationText.textContent = translation;
   els.phoneticText.textContent = lexical.phonetic || "-";
   els.contextSentenceText.textContent = lexical.contextSentence || contextSentence || "-";
   els.contextMeaningText.textContent = lexical.contextMeaning || translation;
@@ -1529,27 +1620,52 @@ function sentenceContainingPhrase(text, phrase) {
 async function translateText(text) {
   const key = `${els.targetLang.value}:${text.toLowerCase()}`;
   if (state.translations[key]) return state.translations[key];
+  if (state.pendingTranslations.has(key)) return state.pendingTranslations.get(key);
 
   const lower = text.toLowerCase();
   if (/^[a-z][a-z'-]*$/i.test(text) && fallbackDictionary.has(lower)) {
     return cacheTranslation(key, fallbackDictionary.get(lower));
   }
 
-  for (const provider of [fetchGoogleTranslation, fetchMyMemoryTranslation]) {
-    try {
-      const translated = await provider(text, els.targetLang.value);
-      if (translated) return cacheTranslation(key, translated);
-    } catch (error) {
-      console.warn("Translation provider failed", error);
-    }
-  }
+  const request = firstSuccessfulTranslation(text, els.targetLang.value)
+    .then((translated) => cacheTranslation(key, translated))
+    .catch(() => "暂时无法连接在线翻译服务。请检查网络后重试。")
+    .finally(() => state.pendingTranslations.delete(key));
+  state.pendingTranslations.set(key, request);
+  return request;
+}
 
-  return "暂时无法连接在线翻译服务。你仍然可以将原文加入笔记，并在导出的笔记中补充译文。";
+function firstSuccessfulTranslation(text, targetLang) {
+  const providers = [
+    { delay: 0, fetch: fetchGoogleTranslation },
+    { delay: 220, fetch: fetchMyMemoryTranslation },
+  ];
+
+  return new Promise((resolve, reject) => {
+    let failures = 0;
+    let settled = false;
+    providers.forEach(({ delay, fetch: provider }) => {
+      window.setTimeout(async () => {
+        try {
+          const translated = await provider(text, targetLang);
+          if (!translated) throw new Error("Empty translation");
+          if (!settled) {
+            settled = true;
+            resolve(translated);
+          }
+        } catch (error) {
+          failures += 1;
+          console.warn("Translation provider failed", error);
+          if (!settled && failures === providers.length) reject(error);
+        }
+      }, delay);
+    });
+  });
 }
 
 async function fetchGoogleTranslation(text, targetLang) {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 5000);
+  const timer = window.setTimeout(() => controller.abort(), 2400);
   try {
     const url =
       "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&dt=t" +
@@ -1568,7 +1684,7 @@ async function fetchGoogleTranslation(text, targetLang) {
 
 async function fetchMyMemoryTranslation(text, targetLang) {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 5000);
+  const timer = window.setTimeout(() => controller.abort(), 2400);
   try {
     const url =
       "https://api.mymemory.translated.net/get?q=" +
@@ -1825,6 +1941,7 @@ function applyZoom() {
   document.querySelectorAll(".page").forEach((page) => {
     page.style.transform = `scale(${state.zoom})`;
   });
+  requestAnimationFrame(updateReaderProgress);
 }
 
 function addCurrentNote() {
@@ -2024,10 +2141,7 @@ function createAnnotationCanvas(pageNumber, width, height) {
 
 function startStroke(event) {
   if (!isDrawingMode()) return;
-  if (event.pointerType === "touch") {
-    if (state.activeStroke) event.preventDefault();
-    return;
-  }
+  if (state.activeStroke || event.isPrimary === false) return;
   if (event.pointerType === "mouse" && event.button !== 0) return;
   event.preventDefault();
   event.currentTarget.setPointerCapture(event.pointerId);
@@ -2038,6 +2152,10 @@ function startStroke(event) {
     pointerId: event.pointerId,
     pointerType: event.pointerType || "mouse",
     last: point,
+  };
+  state.lockedScroll = {
+    left: els.reader.scrollLeft,
+    top: els.reader.scrollTop,
   };
   els.reader.classList.add("stroke-active");
 }
