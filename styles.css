@@ -642,9 +642,16 @@ button:hover:not(:disabled) {
 }
 
 .reader.pen-mode,
-.reader.highlight-mode {
+.reader.highlight-mode,
+.reader.eraser-mode {
   cursor: crosshair;
   user-select: none;
+}
+
+.reader.stroke-active {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
 }
 
 .empty-state {
@@ -687,6 +694,7 @@ button:hover:not(:disabled) {
   display: block;
   width: 100%;
   height: auto;
+  image-rendering: auto;
 }
 
 .textLayer {
@@ -716,12 +724,17 @@ button:hover:not(:disabled) {
   width: 100%;
   height: 100%;
   pointer-events: none;
+  touch-action: pan-x pan-y;
 }
 
 .reader.pen-mode .annotation-canvas,
 .reader.highlight-mode .annotation-canvas,
 .reader.eraser-mode .annotation-canvas {
   pointer-events: auto;
+}
+
+.reader.stroke-active .annotation-canvas {
+  touch-action: none;
 }
 
 .text-doc {
