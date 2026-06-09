@@ -30,7 +30,7 @@
         <section class="panel">
           <h2>导入</h2>
           <label class="file-picker universal-picker">
-            <span>PDF、Word 或 TXT</span>
+            <span>选择学习文档</span>
             <input
               id="fileInput"
               type="file"
@@ -38,18 +38,7 @@
               accept=".pdf,.docx,.txt,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             />
           </label>
-          <label class="file-picker">
-            <span>仅导入 PDF</span>
-            <input id="pdfInput" type="file" accept=".pdf,application/pdf" />
-          </label>
-          <label class="file-picker secondary">
-            <span>仅导入 Word</span>
-            <input id="docxInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-          </label>
-          <label class="file-picker secondary">
-            <span>仅导入文本</span>
-            <input id="textInput" type="file" accept=".txt,text/plain" />
-          </label>
+          <p class="file-help">支持 PDF、DOCX 和 TXT，每个文件会建立独立项目。</p>
           <textarea id="manualText" placeholder="也可以直接粘贴英文文本..."></textarea>
           <button id="loadManualText" class="primary-button">载入文本</button>
         </section>
@@ -62,27 +51,8 @@
           <div id="projectList" class="project-list"></div>
         </section>
 
-        <section class="panel mode-panel">
-          <h2>阅读模式</h2>
-          <div class="segmented" aria-label="选择阅读模式">
-            <button class="segment active" data-mode="word">单词</button>
-            <button class="segment" data-mode="sentence">句子</button>
-            <button class="segment" data-mode="pen">画笔</button>
-            <button class="segment" data-mode="highlight">记号笔</button>
-            <button class="segment" data-mode="eraser">橡皮</button>
-          </div>
-          <label class="control-row">
-            <span>画笔颜色</span>
-            <input id="penColor" type="color" value="#f05a28" />
-          </label>
-          <label class="control-row">
-            <span>画笔粗细</span>
-            <input id="penSize" type="range" min="2" max="18" value="5" />
-          </label>
-        </section>
-
-        <section class="panel">
-          <h2>发音</h2>
+        <details class="panel settings-panel">
+          <summary>阅读与发音设置</summary>
           <label class="control-row stacked">
             <span>美式语音</span>
             <select id="voiceSelect"></select>
@@ -95,11 +65,6 @@
             <input id="autoSpeak" type="checkbox" checked />
             <span>点击后自动发音</span>
           </label>
-          <p class="panel-note">当前使用 iPad/浏览器系统美式 TTS。真人或 AI 音色需要接入云端语音接口。</p>
-        </section>
-
-        <section class="panel">
-          <h2>翻译设置</h2>
           <label class="control-row stacked">
             <span>目标语言</span>
             <select id="targetLang">
@@ -109,7 +74,8 @@
               <option value="ko">韩语</option>
             </select>
           </label>
-        </section>
+          <p class="panel-note">发音由 iPad 或浏览器提供；联网时使用在线翻译。</p>
+        </details>
       </aside>
 
       <main class="workspace">
@@ -131,27 +97,34 @@
             </div>
           </div>
           <div class="toolbar">
+            <span id="connectionStatus" class="connection-status" role="status">在线</span>
             <button id="zoomOut" title="缩小">－</button>
             <button id="zoomReset" title="恢复默认缩放"><span id="zoomValue">100%</span></button>
             <button id="zoomIn" title="放大">＋</button>
             <button id="zoomFit" title="适合宽度">适宽</button>
             <button id="jumpRecognized" class="is-hidden" title="跳到识别文本">识别文本</button>
-            <button id="undoAnnotation" title="撤销上一步标注">撤销</button>
-            <button id="clearAnnotations" title="清除当前文档标注">清除标注</button>
-            <button id="exportNotes" title="导出笔记">导出笔记</button>
+            <button id="undoAnnotation" title="撤销上一步标注" aria-label="撤销上一步标注">↶</button>
+            <button id="clearAnnotations" title="清除当前文档标注">清除</button>
+            <button id="exportNotes" title="导出当前项目笔记">导出</button>
           </div>
         </header>
 
         <div class="reader-grid">
           <section id="reader" class="reader" aria-label="阅读区">
             <div class="empty-state">
-              <h2>导入英文材料后开始精读</h2>
-              <p>点击单词或选中词组、句子即可翻译；切换到画笔模式可以直接勾画。</p>
+              <h2>选择文档开始阅读</h2>
+              <p>支持 PDF、Word 和 TXT。</p>
             </div>
           </section>
 
           <aside class="study-drawer">
-            <section class="lookup-card">
+            <div class="study-tabs" role="tablist" aria-label="学习面板">
+              <button class="study-tab active" data-study-view="lookup" role="tab" aria-selected="true">翻译</button>
+              <button class="study-tab" data-study-view="notes" role="tab" aria-selected="false">
+                笔记 <span id="noteCount">0</span>
+              </button>
+            </div>
+            <section class="lookup-card study-view active" data-study-panel="lookup">
               <div class="lookup-head">
                 <div>
                   <span class="eyebrow">当前选中</span>
@@ -184,10 +157,9 @@
               </div>
             </section>
 
-            <section class="notes-panel">
+            <section class="notes-panel study-view" data-study-panel="notes">
               <div class="notes-head">
-                <h2>复习笔记</h2>
-                <span id="noteCount">0</span>
+                <h2>当前项目笔记</h2>
               </div>
               <div id="notesList" class="notes-list"></div>
             </section>
@@ -197,6 +169,7 @@
     </div>
 
     <nav class="floating-mode-dock" aria-label="悬浮阅读模式">
+      <div class="dock-drag-handle" title="拖动工具栏" aria-label="拖动工具栏">⠿</div>
       <button class="dock-mode active" data-mode="word" title="单词模式">词</button>
       <button class="dock-mode" data-mode="sentence" title="句子模式">句</button>
       <button class="dock-mode" data-mode="pen" title="画笔模式">笔</button>
