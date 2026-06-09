@@ -218,25 +218,46 @@ button:hover:not(:disabled) {
 }
 
 .file-picker {
-  position: relative;
   display: block;
   margin-bottom: 10px;
-  overflow: hidden;
-  cursor: pointer;
 }
 
 .file-picker input {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
+  position: static;
+  display: block;
   width: 100%;
-  height: 100%;
-  opacity: 0;
-  pointer-events: auto;
+  min-height: 42px;
+  margin-top: 5px;
+  padding: 4px;
+  opacity: 1;
+  color: #d9e2e3;
+  font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.16);
   cursor: pointer;
 }
 
-.file-picker span,
+.file-picker input::file-selector-button {
+  min-height: 32px;
+  margin-right: 8px;
+  padding: 0 12px;
+  color: #fff;
+  font: inherit;
+  font-weight: 650;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.file-picker span {
+  display: block;
+  color: #c5d0d2;
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .primary-button {
   display: inline-flex;
   justify-content: center;
@@ -250,16 +271,15 @@ button:hover:not(:disabled) {
   font-weight: 650;
 }
 
-.file-picker.secondary span {
-  background: transparent;
-  border-color: rgba(255, 255, 255, 0.25);
+.universal-picker {
+  padding: 9px;
+  border: 1px solid rgba(237, 248, 246, 0.35);
+  border-radius: 7px;
+  background: rgba(237, 248, 246, 0.08);
 }
 
 .universal-picker span {
-  min-height: 46px;
-  background: #edf8f6;
-  border-color: #edf8f6;
-  color: #174f4a;
+  color: #edf8f6;
 }
 
 #manualText {

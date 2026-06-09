@@ -29,24 +29,25 @@
         <section class="panel">
           <h2>导入</h2>
           <label class="file-picker universal-picker">
+            <span>PDF、Word 或 TXT</span>
             <input
               id="fileInput"
               type="file"
+              aria-label="从设备选择 PDF、Word 或 TXT 文件"
               accept=".pdf,.docx,.txt,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             />
-            <span>从 iPad 文件中导入</span>
           </label>
           <label class="file-picker">
+            <span>仅导入 PDF</span>
             <input id="pdfInput" type="file" accept=".pdf,application/pdf" />
-            <span>导入 PDF</span>
           </label>
           <label class="file-picker secondary">
+            <span>仅导入 Word</span>
             <input id="docxInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-            <span>导入 Word</span>
           </label>
           <label class="file-picker secondary">
+            <span>仅导入文本</span>
             <input id="textInput" type="file" accept=".txt,text/plain" />
-            <span>导入文本</span>
           </label>
           <textarea id="manualText" placeholder="也可以直接粘贴英文文本..."></textarea>
           <button id="loadManualText" class="primary-button">载入文本</button>
